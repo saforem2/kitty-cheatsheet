@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kitty-cheatsheet"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Interactive keybinding cheatsheet for the kitty terminal emulator"
 readme = "README.md"
 license = {text = "MIT"}
@@ -27,3 +27,6 @@ kitty-cheatsheet = "kitty_cheatsheet.cli:main"
 [project.urls]
 Homepage = "https://github.com/saforem2/kitty-cheatsheet"
 Repository = "https://github.com/saforem2/kitty-cheatsheet"
+
+[tool.hatch.version]
+path = "src/kitty_cheatsheet/__init__.py"
