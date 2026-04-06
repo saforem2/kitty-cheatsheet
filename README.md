@@ -15,10 +15,18 @@ Parses your kitty config files directly and renders a colorized, searchable, sid
 </tr>
 </table>
 
+## Quick Start
+
+```bash
+# if you still haven't installed uv:
+# curl -LsSf https://astral.sh/uv/install.sh | sh
+uvx kitty-cheatsheet
+```
+
 ## Install
 
 ```bash
-pip install kitty-cheatsheet
+uv pip install kitty-cheatsheet
 ```
 
 ## Usage
