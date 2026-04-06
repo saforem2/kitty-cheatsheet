@@ -4,6 +4,17 @@ Interactive keybinding and mouse binding cheatsheet for the [kitty](https://sw.k
 
 Parses your kitty config files directly and renders a colorized, searchable, side-by-side cheatsheet in your terminal.
 
+<table>
+<tr>
+<td><strong>Dark</strong></td>
+<td><strong>Light</strong></td>
+</tr>
+<tr>
+<td><img src="assets/cheatsheet-dark.png" alt="Dark theme screenshot" width="100%"></td>
+<td><img src="assets/cheatsheet-light.png" alt="Light theme screenshot" width="100%"></td>
+</tr>
+</table>
+
 ## Install
 
 ```bash
