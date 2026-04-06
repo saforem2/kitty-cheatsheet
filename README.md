@@ -18,7 +18,13 @@ Parses your kitty config files directly and renders a colorized, searchable, sid
 ## Install
 
 ```bash
-pip install kitty-cheatsheet
+uv pip install kitty-cheatsheet
+```
+
+or try it without installing:
+
+```bash
+uvx kitty-cheatsheet
 ```
 
 ## Usage
