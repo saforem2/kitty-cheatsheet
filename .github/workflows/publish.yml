@@ -1,0 +1,149 @@
+name: Release & Publish
+
+on:
+  push:
+    tags:
+      - "v*"
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: read
+  id-token: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release-and-publish:
+    if: >-
+      (github.event_name == 'push') ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
+    runs-on: ubuntu-latest
+    environment: pypi
+    env:
+      VERSION_BUMP: patch
+      IS_RELEASE: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up Python
+        run: uv python install
+
+      # --- Release steps (PR merge only) ---
+
+      - name: Determine bump level
+        id: bump_level
+        if: env.IS_RELEASE == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          bump="${VERSION_BUMP:-patch}"
+          labels="$(python scripts/parse_labels.py)"
+          echo "PR labels: ${labels:-<none>}"
+
+          # Parse into a set for exact matching
+          IFS=',' read -ra label_arr <<< "$labels"
+          declare -A label_set
+          for l in "${label_arr[@]}"; do
+            [[ -n "$l" ]] && label_set["$l"]=1
+          done
+
+          # Skip labels
+          for skip in "release:skip" "skip-release" "no-release" "skip-version-bump"; do
+            if [[ -n "${label_set[$skip]:-}" ]]; then
+              echo "Release/version bump skipped due to label: $skip"
+              echo "skip_release=true" >> "$GITHUB_OUTPUT"
+              echo "bump=none" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+
+          # Bump labels (highest wins: major > minor > patch)
+          if [[ -n "${label_set[release:major]:-}" ]] || [[ -n "${label_set[semver:major]:-}" ]]; then
+            bump="major"
+          elif [[ -n "${label_set[release:minor]:-}" ]] || [[ -n "${label_set[semver:minor]:-}" ]]; then
+            bump="minor"
+          elif [[ -n "${label_set[release:patch]:-}" ]] || [[ -n "${label_set[semver:patch]:-}" ]]; then
+            bump="patch"
+          fi
+
+          echo "Using bump level: ${bump}"
+          echo "skip_release=false" >> "$GITHUB_OUTPUT"
+          echo "bump=${bump}" >> "$GITHUB_OUTPUT"
+
+      - name: Install hatch
+        if: env.IS_RELEASE == 'true' && steps.bump_level.outputs.skip_release != 'true'
+        run: uv tool install --upgrade hatch
+
+      - name: Bump version
+        id: bump
+        if: env.IS_RELEASE == 'true' && steps.bump_level.outputs.skip_release != 'true'
+        run: |
+          set -euo pipefail
+          old_version="$(hatch version)"
+          bump="${{ steps.bump_level.outputs.bump }}"
+          echo "Bumping version (${bump}) from ${old_version}"
+          hatch version "${bump}"
+          new_version="$(hatch version)"
+          echo "NEW_VERSION=${new_version}" >> "$GITHUB_ENV"
+          echo "new_version=${new_version}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate changelog entry
+        id: changelog
+        if: env.IS_RELEASE == 'true' && steps.bump_level.outputs.skip_release != 'true'
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          PREV_TAG=$(git describe --tags --abbrev=0 --match "v*" 2>/dev/null || true)
+          export PREV_TAG
+          python scripts/generate_changelog.py
+
+      - name: Commit version and changelog
+        if: env.IS_RELEASE == 'true' && steps.bump_level.outputs.skip_release != 'true'
+        env:
+          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/kitty_cheatsheet/__init__.py CHANGELOG.md
+          git commit -m "chore: release v${NEW_VERSION}"
+          git fetch origin main
+          git rebase origin/main
+          git tag "v${NEW_VERSION}"
+          git push origin HEAD:main
+          git push origin "v${NEW_VERSION}"
+
+      - name: Publish GitHub release
+        if: env.IS_RELEASE == 'true' && steps.bump_level.outputs.skip_release != 'true'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.bump.outputs.new_version }}
+          name: v${{ steps.bump.outputs.new_version }}
+          body: ${{ steps.changelog.outputs.body }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # --- Publish steps ---
+      # On tag push: always publish. On PR merge: skip if release:skip label.
+
+      - name: Build package
+        if: github.event_name == 'push' || steps.bump_level.outputs.skip_release != 'true'
+        run: uv build
+
+      - name: Publish to PyPI
+        if: github.event_name == 'push' || steps.bump_level.outputs.skip_release != 'true'
+        run: uv publish
